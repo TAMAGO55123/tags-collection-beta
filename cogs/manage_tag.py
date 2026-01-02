@@ -6,7 +6,12 @@ from func.discord import MyBot
 from func.log import get_log
 from typing import Literal
 import json
-
+import datetime
+import math
+from os import getenv
+from dotenv import load_dotenv
+load_dotenv()
+from func.db import add_tag
 class ManageTagCog(commands.Cog):
     def __init__(self, bot:MyBot):
         self.bot = bot
@@ -22,12 +27,6 @@ class ManageTagCog(commands.Cog):
     tagdb = tagdb1(name="btag", description="【β】タグに関するコマンド。")
 
     @tagdb.command(name="add", description="【β】タグを追加します。")
-    @app_commands.choices(kind=[
-        Choice(name="標準", value="1408781349241749556"),
-        Choice(name="参加申請", value="1408781349241749561"),
-        Choice(name="危険単語", value="1408781349631950848"),
-        Choice(name="危険", value="1408781349631950852")
-    ])
     @app_commands.describe(
         name="タグの名前",
         invite_url="サーバーの招待リンク(あればバニティURLとか)",
@@ -39,32 +38,46 @@ class ManageTagCog(commands.Cog):
         interaction:discord.Interaction, 
         name:str, 
         invite_url:str, 
-        kind:Choice[str], 
-        lang:Literal["JP", "EN", "CN"]
+        kind:Literal["標準", "参加申請", "危険"], 
+        lang:Literal["Japanese", "English", "Chinese"]
     ):
         try:
+            _kind = 0
+            match kind:
+                case "標準":
+                    _kind = 0
+                case "参加申請":
+                    _kind = 1
+                case "危険":
+                    _kind = 2
             await interaction.response.defer()
             invite = await self.bot.fetch_invite(invite_url)
-            resp_json = {
-                    "server_id": invite.guild.id,
-                    "server_name": invite.guild.name,
-                    "tag_name": name,
-                    "category": kind.value,
-                    "lang": lang
-            }
-            response = (
-                await self.bot.supabase.table("tags")
-                .insert(resp_json)
-                .execute()
+            if invite.type != discord.InviteType.guild:
+                raise Exception("指定されたURLはサーバー招待ではありません。")
+            if "GUILD_TAGS" not in invite.guild.features:
+                raise Exception("指定された招待リンクのサーバーはギルドタグを持っていないようです。")
+            if invite.expires_at != None:
+                raise Exception("指定されたURLの期限は無限ではありません。")
+            if invite is None:
+                raise Exception("招待リンクの情報の取得に失敗しました。")
+            
+            server_icon = invite.guild.icon.url if invite.guild.icon else ""
+            
+            ok, res = await add_tag(
+                guild_id=invite.guild.id,
+                guild_name=invite.guild.name,
+                invite_url=invite.url,
+                guild_icon=server_icon,
+                tag_name=name,
+                category=_kind,
+                lang=lang
             )
-            resp_json_str = json.dumps(resp_json, indent=4, ensure_ascii=False)
+            if ok != True:
+                raise Exception(f"データベースエラー:{res}")
             await interaction.followup.send(embed=discord.Embed(
                 title="タグ追加",
                 description=f"""\
-                **データベースに情報を追加しました。**
-                ```json
-                {resp_json_str}
-                ```"""
+                **データベースに情報を追加しました。**"""
             ))
         except Exception as e:
             await interaction.followup.send(embed=discord.Embed(

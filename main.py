@@ -7,6 +7,7 @@ from func.discord import MyBot
 from os import getenv, listdir
 from dotenv import load_dotenv
 from supabase import AsyncClient, acreate_client
+from cloudflare import AsyncCloudflare
 import aioconsole
 load_dotenv()
 
@@ -37,11 +38,9 @@ async def bot_stop():
 async def main(bot:MyBot):
     log = main_log
     try:
-        bot.supabase = await acreate_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        await bot.supabase.auth.sign_in_with_password({
-            "email": SUPABASE_NAME,
-            "password": SUPABASE_PASS
-        })
+        bot.cf = AsyncCloudflare(
+            api_token = getenv("CLOUDFLARE_API_TOKEN")
+        )
 
         @bot.event
         async def on_ready():
