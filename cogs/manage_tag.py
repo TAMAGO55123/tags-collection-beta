@@ -25,12 +25,14 @@ class Tag_Embed(View):
         embed = discord.Embed(
             title=f"ページ数({self.current_page + 1} / {len(self.pages)})",
             description=f"""\
+**登録ID** : {a.id}
 **タグ** : {a.tag_name}
 **サーバー名** : {a.server_name}
 **カテゴリ** : {a.category}
 **主要言語** : {a.lang}
 **招待リンク** : {a.server_invite}
-"""
+""",
+            colour=discord.Colour.random()
         ).set_thumbnail(url=a.server_icon)
         if self.current_page == 0:
             self.previous.disabled = True
@@ -100,6 +102,7 @@ class ManageTagCog(commands.Cog):
                     _kind = 1
                 case "危険":
                     _kind = 2
+            embeds:list[discord.Embed] = []
             await interaction.response.defer()
             invite = await self.bot.fetch_invite(invite_url)
             if invite.type != discord.InviteType.guild:
@@ -107,7 +110,18 @@ class ManageTagCog(commands.Cog):
             if "GUILD_TAGS" not in invite.guild.features:
                 raise Exception("指定された招待リンクのサーバーはギルドタグを持っていないようです。")
             if invite.expires_at != None:
-                raise Exception("指定されたURLの期限は無限ではありません。")
+                sec_exp = 60*60*24
+                now = datetime.datetime.now()
+                exp = invite.expires_at - now
+                invite_sec_exp = exp.total_seconds()
+                if invite_sec_exp < sec_exp:
+                    raise Exception("招待リンクが1日未満で切れるため追加できません")
+                embeds.append(discord.Embed(
+                    title="警告",
+                    description=f"**招待リンクの有効期限が無制限ではありません。**\n**有効期限** : <t:{invite.expires_at.timestamp()}:f>",
+                    colour=discord.Colour.orange()
+                ))
+            
             
             server_icon = invite.guild.icon.url if invite.guild.icon else ""
             
@@ -124,7 +138,7 @@ class ManageTagCog(commands.Cog):
                 raise Exception("登録済みです。")
             if ok != True:
                 raise Exception(f"データベースエラー:{res}")
-            await interaction.followup.send(embed=discord.Embed(
+            embeds.insert(0, discord.Embed(
                 title="タグ追加",
                 description=f"""\
                 **データベースに情報を追加しました。**
@@ -133,24 +147,29 @@ class ManageTagCog(commands.Cog):
                 **サーバー名** : {invite.guild.name}
                 **カテゴリ** : {kind}
                 **主要言語** : {lang}
-                **招待リンク** : {invite.url}"""
+                **招待リンク** : {invite.url}""",
+                colour=discord.Colour.green()
             ).set_thumbnail(url=server_icon))
+            await interaction.followup.send(embeds=embeds)
         except NotFound as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"招待リンクが有効ではありません。\n```{e}```"
+                description=f"招待リンクが有効ではありません。\n```{e}```",
+                colour=discord.Colour.red()
             ))
             self.log.error(e)
         except HTTPException as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"招待リンクの取得に失敗しました。\n```{e}```"
+                description=f"招待リンクの取得に失敗しました。\n```{e}```",
+                colour=discord.Colour.red()
             ))
             self.log.error(e)
         except Exception as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"タグの追加中にエラーが発生しました。\n```{e}```"
+                description=f"タグの追加中にエラーが発生しました。\n```{e}```",
+                colour=discord.Colour.red()
             ))
             self.log.error(e)
     
@@ -203,7 +222,8 @@ class ManageTagCog(commands.Cog):
                     **主要言語** : {a.lang}
                     **招待リンク** : {a.server_invite}
                     **登録日** : <t:{a.created_at}:f>{webdes}
-                    """
+                    """,
+                    colour=discord.Colour.random()
                 ).set_thumbnail(url=a.server_icon)
                 view.previous.disabled = True
                 if len(db.data) == 1 :
@@ -225,12 +245,13 @@ class ManageTagCog(commands.Cog):
     async def delete(self, interaction:discord.Interaction, id:int):
         await interaction.response.defer()
         try:
-            ok, res = self.DB.delete_tag(id)
+            ok, res = await self.DB.delete_tag(id)
             if ok != True:
                 raise Exception(f"データベースエラー : {res}")
             await interaction.followup.send(embed=discord.Embed(
                 title="タグ削除",
-                description="タグを削除しました。"
+                description="タグを削除しました。",
+                colour=discord.Colour.red()
             ))
         except Exception as e:
             await interaction.followup.send(embed=discord.Embed(
@@ -247,109 +268,119 @@ class ManageTagCog(commands.Cog):
     async def name(self, interaction:discord.Interaction, id:int, name:str):
         await interaction.response.defer()
         try:
-            db:Tags = self.DB.get_tag(id=id)
+            db:Tags = await self.DB.get_tag(id=id)
             if db.count == 0:
                 raise Exception("タグを取得できませんでした。")
             
-            invite:discord.Invite = self.bot.fetch_invite(db.data[0].server_invite)
+            invite:discord.Invite = await self.bot.fetch_invite(db.data[0].server_invite)
             server_name = invite.guild.name
             server_icon = invite.guild.icon
-            ok, res = self.DB.edit_tag(
+            ok, res = await self.DB.edit_tag(
                 tag_id=id,
                 tag_name=name,
                 server_name=server_name,
-                server_icon=server_icon
+                server_icon=server_icon.url
             )
             if ok != True:
                 raise Exception(f"データベースエラー : {res}")
             await interaction.followup.send(embed=discord.Embed(
                 title="タグ名変更",
-                description="タグの名前を変更し、サーバー名とアイコンも更新しました。"
+                description="タグの名前を変更し、サーバー名とアイコンも更新しました。",
+                colour=discord.Colour.green()
             ))
         except NotFound as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"保存した招待リンクが有効ではないため、タグを削除します。\n```{e}```"
+                description=f"保存した招待リンクが有効ではないため、タグを削除します。\n```{e}```",
+                colour=discord.Colour.orange()
             ))
             self.log.error(e)
             try:
-                db:Tags = self.DB.get_tag(id=id)
+                db:Tags = await self.DB.get_tag(id=id)
                 if db.count == 0:
                     raise Exception("タグを取得できませんでした。")
-                ok, res = self.DB.delete_tag(db.data[0].id)
+                ok, res = await self.DB.delete_tag(db.data[0].id)
                 if ok != True:
                     raise Exception(f"データベースエラー : {res}")
                 await interaction.followup.send(embed=discord.Embed(
                     title="タグ削除",
-                    description="タグを削除しました。"
+                    description="タグを削除しました。",
+                    colour=discord.Colour.red()
                 ))
             except Exception as e:
                 await interaction.followup.send(embed=discord.Embed(
                     title="エラー",
-                    description=f"タグの削除中にエラーが発生しました。\n```{e}```"
+                    description=f"タグの削除中にエラーが発生しました。\n```{e}```",
+                    colour=discord.Colour.red()
                 ))
                 self.log.error(e)
         except Exception as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"タグの追加中にエラーが発生しました。\n```{e}```"
+                description=f"タグの追加中にエラーが発生しました。\n```{e}```",
+                colour=discord.Colour.red()
             ))
             self.log.error(e)
-
+    
     @tagdb.command(name="invite", description="タグの招待を変更します。")
     @app_commands.describe(
         id="管理ID",
-        name="新しい招待リンク"
+        invite_url="新しい招待リンク"
     )
-    async def name(self, interaction:discord.Interaction, id:int, invite_url:str):
+    async def invite(self, interaction:discord.Interaction, id:int, invite_url:str):
         await interaction.response.defer()
         try:
-            db:Tags = self.DB.get_tag(id=id)
+            db:Tags = await self.DB.get_tag(id=id)
             if db.count == 0:
                 raise Exception("タグを取得できませんでした。")
             
-            invite:discord.Invite = self.bot.fetch_invite(invite_url)
+            invite:discord.Invite = await self.bot.fetch_invite(invite_url)
             server_name = invite.guild.name
             server_icon = invite.guild.icon
-            ok, res = self.DB.edit_tag(
+            ok, res = await self.DB.edit_tag(
                 tag_id=id,
                 server_name=server_name,
-                server_icon=server_icon,
+                server_icon=server_icon.url,
                 server_invite=invite_url
             )
             if ok != True:
                 raise Exception(f"データベースエラー : {res}")
             await interaction.followup.send(embed=discord.Embed(
                 title="タグ名変更",
-                description="タグの招待を変更し、サーバー名とアイコンも更新しました。"
+                description="タグの招待を変更し、サーバー名とアイコンも更新しました。",
+                colour=discord.Colour.green()
             ))
         except NotFound as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"保存した招待リンクが有効ではないため、タグを削除します。\n```{e}```"
+                description=f"保存した招待リンクが有効ではないため、タグを削除します。\n```{e}```",
+                colour=discord.Colour.orange()
             ))
             self.log.error(e)
             try:
-                db:Tags = self.DB.get_tag(id=id)
+                db:Tags = await self.DB.get_tag(id=id)
                 if db.count == 0:
                     raise Exception("タグを取得できませんでした。")
-                ok, res = self.DB.delete_tag(db.data[0].id)
+                ok, res = await self.DB.delete_tag(db.data[0].id)
                 if ok != True:
                     raise Exception(f"データベースエラー : {res}")
                 await interaction.followup.send(embed=discord.Embed(
                     title="タグ削除",
-                    description="タグを削除しました。"
+                    description="タグを削除しました。",
+                    colour=discord.Colour.red()
                 ))
             except Exception as e:
                 await interaction.followup.send(embed=discord.Embed(
                     title="エラー",
-                    description=f"タグの削除中にエラーが発生しました。\n```{e}```"
+                    description=f"タグの削除中にエラーが発生しました。\n```{e}```",
+                    colour=discord.Colour.red()
                 ))
                 self.log.error(e)
         except Exception as e:
             await interaction.followup.send(embed=discord.Embed(
                 title="エラー",
-                description=f"タグの追加中にエラーが発生しました。\n```{e}```"
+                description=f"タグの追加中にエラーが発生しました。\n```{e}```",
+                colour=discord.Colour.red()
             ))
             self.log.error(e)
 

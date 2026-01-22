@@ -137,7 +137,7 @@ class Tag_DB:
         if server_invite:
             params["server_invite"] = server_invite
         async with aiohttp.ClientSession() as session:
-            async with session.patch(url=url, headers=headers, params=params) as resp:
+            async with session.patch(url=url, headers=headers, json=params) as resp:
                 text = await resp.text()
                 if resp.status == 200:
                     return True, text
