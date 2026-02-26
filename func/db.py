@@ -59,7 +59,7 @@ class Tag_DB:
                 else:
                     return False, await resp.text()
 
-    async def get_tag(self, id:int = None, tag_name: str = None, category:int = None, lang:str = None, page:int = 1, limit = 30, has_d:bool = False) -> Tags:
+    async def get_tag(self, id:int = None, tag_name: str = None, category:int = None, lang:str = None, server_id:int = None, page:int = 1, limit = 30, has_d:bool = False) -> Tags:
         params = {
             "offset": page,
             "limit": limit
@@ -73,6 +73,8 @@ class Tag_DB:
             params["category"] = category
         if lang:
             params["lang"] = lang
+        if server_id:
+            params["server_id"] = server_id
         params["skip"] = str(not has_d).lower()
         async with aiohttp.ClientSession() as session:
             async with session.get(API_URL, params=params) as resp:
@@ -143,3 +145,10 @@ class Tag_DB:
                     return True, text
                 else:
                     return False, text
+    async def update_icon(self, id:int):
+        url = f"{API_URL}/update_icon"
+        params = {"id": str(id)}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(url, headers={"x-api-key": API_KEY}, params=params) as resp:
+                return resp.status, await resp.text()
