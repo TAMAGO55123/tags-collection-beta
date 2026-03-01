@@ -1,16 +1,19 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from func.ready import bot_ready_print
+from func.discord import MyBot
+from func.db import Tag_DB
+from func.log import get_log
 
-class NameCog(commands.Cog):
-    def __init__(self, bot:commands.Bot):
+class SampleCog(commands.Cog):
+    def __init__(self, bot:MyBot):
         self.bot = bot
+        self.log = get_log("TagCog")
+        self.DB = Tag_DB()
     
     @commands.Cog.listener()
     async def on_ready(self):
-        bot_ready_print("Cog")
-	
+        self.log.info(f"SampleCogを読み込みました!")
 
 async def setup(bot):
-    await bot.add_cog(NameCog(bot))
+    await bot.add_cog(SampleCog(bot))

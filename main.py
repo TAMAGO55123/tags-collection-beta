@@ -6,9 +6,9 @@ from discord.ext import commands, tasks
 from func.discord import MyBot
 from os import getenv, listdir
 from dotenv import load_dotenv
-from supabase import AsyncClient, acreate_client
-from cloudflare import AsyncCloudflare
 import aioconsole
+from datetime import datetime
+import math
 load_dotenv()
 
 intents = discord.Intents.all()
@@ -16,10 +16,6 @@ intents = discord.Intents.all()
 bot = MyBot(command_prefix="tagb_", intents=intents)
 
 TOKEN = getenv("TOKEN")
-SUPABASE_URL: str = getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY: str = getenv("SUPABASE_ANON_KEY")
-SUPABASE_NAME: str = getenv("SUPABASE_USER")
-SUPABASE_PASS: str = getenv("SUPABASE_PASS")
 
 main_log = get_log("Main")
 
@@ -38,15 +34,16 @@ async def bot_stop():
 async def main(bot:MyBot):
     log = main_log
     try:
-        bot.cf = AsyncCloudflare(
-            api_token = getenv("CLOUDFLARE_API_TOKEN")
-        )
-
         @bot.event
         async def on_ready():
             global console_task
             console_task = asyncio.create_task(console_input())
             log.info(f"{bot.user}としてログインしました^o^")
+            log_channel = bot.get_channel(1408781350819069955)
+            await log_channel.send(embed=discord.Embed(
+                title="BOTが起動しました^p^",
+                description="BOTが起動しました",
+            ))
         @bot.event
         async def setup_hook():
             try:
@@ -57,6 +54,45 @@ async def main(bot:MyBot):
                 log.info(f"{len(synced)}個のコマンドを同期しました。")
             except Exception as e:
                 log.error(f"コマンドの同期中にエラーが発生しました。")
+        
+        class SendEmbedModal(discord.ui.Modal):
+            def __init__(self, channel:discord.TextChannel, message:str):
+                super().__init__(
+                    title="フォーム",
+                    timeout=None,
+                )
+
+                self.messages = discord.ui.TextInput(
+                    label="Color Code",
+                    style=discord.TextStyle.short,
+                    max_length=6,
+                    required=False,
+                )
+                self.add_item(self.messages)
+
+                self.channel = channel
+                self.message = message
+
+            async def on_submit(self, interaction:discord.Interaction):
+                if self.messages.value:
+                    a = int(f"0x{self.messages.value}", 16)
+                else:
+                    a = None
+                await self.channel.send(embed=discord.Embed(description=self.message, color=a))
+                await interaction.response.send_message("sended.",ephemeral=True)
+        
+        @bot.tree.context_menu(name="メッセージを再送信")
+        @app_commands.default_permissions(administrator=True)
+        async def message_re_send(interaction:discord.Interaction, message:discord.Message):
+            await message.channel.send(content=message.content, embeds=message.embeds)
+            await interaction.response.send_message(content="sended.",ephemeral=True)
+
+        @bot.tree.context_menu(name="メッセージを埋め込みに変換")
+        @app_commands.default_permissions(administrator=True)
+        async def message_send_embed(interaction:discord.Interaction, message:discord.Message):
+            modal = SendEmbedModal(channel=message.channel, message=message.content)
+            await interaction.response.send_modal(modal)
+            
 
         await bot.start(TOKEN)
     except Exception as e:
